@@ -455,7 +455,7 @@ module Fog
 
       unless response && expires > Time.now
         request = {
-          :expects => [201],
+          :expects => [200],
           :headers => {'Content-Type' => 'application/json'},
           :body    => Fog::JSON.encode(request_body),
           :method  => 'POST',
@@ -477,13 +477,13 @@ module Fog
     def self.get_service_v3(hash, service_type=[], service_name=nil, region=nil, options={})
 
       # Find all services matching any of the types in service_type, filtered by service_name if it's non-nil
-      services = hash['token']['catalog'].find_all do |s|
+      services = hash['token']['Catalog'].find_all do |s|
         if service_name.nil? or service_name.empty?
           service_type.include?(s['type'])
         else
           service_type.include?(s['type']) and s['name'] == service_name
         end
-      end if hash['token']['catalog']
+      end if hash['token']['Catalog']
 
       # Filter the found services by region (if specified) and whether the endpoint path matches the given regex (e.g. /\/v3/)
       services.find do |s|
