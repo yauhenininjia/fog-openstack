@@ -28,6 +28,8 @@ module Fog
           instance_variable_set "@#{openstack_param}".to_sym, value
         end
 
+        @logger = options[:logger]
+
         @auth_token ||= options[:openstack_auth_token]
         @openstack_identity_public_endpoint = options[:openstack_identity_endpoint]
 
@@ -76,28 +78,39 @@ module Fog
       private
 
       def request(params, parse_json = true)
-        retried = false
+        @retried = false
         begin
-          response = @connection.request(params.merge(
+          if Time.now.utc > @token_expires_at
+            reauthenticate
+          end
+
+          params_for_request = params.merge(
                                            :headers => {
                                              'Content-Type' => 'application/json',
                                              'Accept'       => 'application/json',
                                              'X-Auth-Token' => @auth_token
                                            }.merge!(params[:headers] || {}),
                                            :path    => "#{@path}/#{params[:path]}"
-          ))
+          )
+
+          @logger.info("params_for_request: #{params_for_request} WITH FLAGS @openstack_can_reauthenticate: #{@openstack_can_reauthenticate} !@retried: #{!@retried}")
+
+          response = @connection.request(params_for_request)
         rescue Excon::Errors::Unauthorized => error
           # token expiration and token renewal possible
-          if error.response.body != 'Bad username or password' && @openstack_can_reauthenticate && !retried
-            @openstack_must_reauthenticate = true
-            authenticate
-            set_api_path
-            retried = true
+          @logger.info("Excon::Errors::Unauthorized => #{error} WITH FLAGS @openstack_can_reauthenticate: #{@openstack_can_reauthenticate} !@retried: #{!@retried}")
+
+          if error.response.body != 'Bad username or password' && @openstack_can_reauthenticate && !@retried
+            reauthenticate
             retry
           # bad credentials or token renewal not possible
           else
             raise error
           end
+        rescue Excon::Errors::SocketError => error
+          @logger.info("SOCKET ERROR: #{error}")
+          reauthenticate
+          retry
         rescue Excon::Errors::HTTPStatusError => error
           raise case error
                 when Excon::Errors::NotFound
@@ -137,6 +150,7 @@ module Fog
           options[:openstack_auth_token] = @openstack_must_reauthenticate ? nil : @openstack_auth_token
 
           credentials = Fog::OpenStack.authenticate(options, @connection_options)
+          @logger.info("CREDENTIALS AFTER AUTHENTICATE: #{credentials}")
 
           @current_user = credentials[:user]
           @current_user_id = credentials[:current_user_id]
@@ -144,6 +158,7 @@ module Fog
 
           @openstack_must_reauthenticate = false
           @auth_token = credentials[:token]
+          @token_expires_at = Time.parse(credentials[:expires])
           @openstack_management_url = credentials[:server_management_url]
           @unscoped_token = credentials[:unscoped_token]
         else
@@ -166,6 +181,14 @@ module Fog
         end
 
         true
+      end
+
+      def reauthenticate
+        @logger.info('Reauthenticate')
+        @openstack_must_reauthenticate = true
+        authenticate
+        set_api_path
+        @retried = true
       end
     end
   end
