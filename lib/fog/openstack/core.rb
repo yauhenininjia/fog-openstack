@@ -76,8 +76,12 @@ module Fog
       private
 
       def request(params, parse_json = true)
-        retried = false
+        @retried = false
         begin
+          if Time.now.utc > @token_expires_at
+            reauthenticate
+          end
+
           response = @connection.request(params.merge(
                                            :headers => {
                                              'Content-Type' => 'application/json',
@@ -88,16 +92,19 @@ module Fog
           ))
         rescue Excon::Errors::Unauthorized => error
           # token expiration and token renewal possible
-          if error.response.body != 'Bad username or password' && @openstack_can_reauthenticate && !retried
-            @openstack_must_reauthenticate = true
-            authenticate
-            set_api_path
-            retried = true
+
+          if error.response.body != 'Bad username or password' && @openstack_can_reauthenticate && !@retried
+            reauthenticate
             retry
           # bad credentials or token renewal not possible
           else
             raise error
           end
+        # catch 'SocketError BrokenPipe' after request
+        # with bad token when 'Unauthorized' was not throwed
+        rescue Excon::Errors::SocketError => error
+          reauthenticate
+          retry
         rescue Excon::Errors::HTTPStatusError => error
           raise case error
                 when Excon::Errors::NotFound
@@ -144,6 +151,7 @@ module Fog
 
           @openstack_must_reauthenticate = false
           @auth_token = credentials[:token]
+          @token_expires_at = Time.parse(credentials[:expires])
           @openstack_management_url = credentials[:server_management_url]
           @unscoped_token = credentials[:unscoped_token]
         else
@@ -166,6 +174,13 @@ module Fog
         end
 
         true
+      end
+
+      def reauthenticate
+        @openstack_must_reauthenticate = true
+        authenticate
+        set_api_path
+        @retried = true
       end
     end
   end
