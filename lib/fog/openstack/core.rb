@@ -78,7 +78,7 @@ module Fog
       def request(params, parse_json = true)
         @retried = false
         begin
-          if Time.now.utc > @token_expires_at
+          if Time.zone.now.utc > @token_expires_at
             reauthenticate
           end
 
