@@ -455,7 +455,7 @@ module Fog
 
       unless response && expires > Time.now
         request = {
-          :expects => [200],
+          :expects => [200, 201],
           :headers => {'Content-Type' => 'application/json'},
           :body    => Fog::JSON.encode(request_body),
           :method  => 'POST',
