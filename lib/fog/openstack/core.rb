@@ -37,6 +37,8 @@ module Fog
 
         @openstack_cache_ttl = options[:openstack_cache_ttl] || 0
 
+        @logger = options[:logger]
+
         if @auth_token
           @openstack_can_reauthenticate = false
         else
@@ -82,6 +84,7 @@ module Fog
             reauthenticate
           end
 
+          start = Time.now
           response = @connection.request(params.merge(
                                            :headers => {
                                              'Content-Type' => 'application/json',
@@ -90,6 +93,13 @@ module Fog
                                            }.merge!(params[:headers] || {}),
                                            :path    => "#{@path}/#{params[:path]}"
           ))
+          finish = Time.now
+          @logger.info([
+            finish - start,
+            params[:method],
+            URI.decode(params[:path]),
+            params[:headers]["Content-Length"]
+          ].join(' : '))
         rescue Excon::Errors::Unauthorized => error
           # token expiration and token renewal possible
 
