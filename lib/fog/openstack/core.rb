@@ -106,6 +106,13 @@ module Fog
           reauthenticate
           retry
         rescue Excon::Errors::HTTPStatusError => error
+          # Sometimes we get 404 on HEAD request but GET is 200 OK
+          # Maybe it's Selectel specific issue
+          if params[:method] == 'HEAD' && error.is_a?(Excon::Errors::NotFound)
+            params[:method] = 'GET'
+            retry
+          end
+
           raise case error
                 when Excon::Errors::NotFound
                   self.class.not_found_class.slurp(error)
